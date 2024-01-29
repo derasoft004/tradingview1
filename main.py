@@ -13,9 +13,7 @@ import csv
 # print(cryptocompare.get_historical_price('BTC', 'EUR', datetime.datetime(2017,6,6))) # history cost
 # print(cryptocompare.get_historical_price_hour('BTC', currency='EUR', limit=1))
 
-print(cryptocompare.get_price('GFY'))
-# print(cryptocompare.get_price(symbol))
-# print(cryptocompare.get_price(symbol))
+# print(cryptocompare.get_price('GFY'))
 
 
 INTERVAL = Interval.INTERVAL_1_MINUTE
@@ -148,12 +146,12 @@ while True:
             time_now_tmp = f'{time_now.day}:{time_now.hour}:{time_now.minute}:{time_now.second}'
             symbol = data['SYMBOL']
             symbol_name, currency = separate_symbol_name(symbol)
-            print(cryptocompare.get_price(symbol_name, currency))
+            # print(cryptocompare.get_price(symbol_name, currency))
             # print(cryptocompare.get_historical_price(symbol, timestamp=time_now))
 
 
             if data['RECOMMENDATION'] == 'STRONG_BUY' and symbol not in longs:
-                send_message(symbol + ' BUY')
+                # send_message(symbol + ' BUY')
                 with open('data.csv', 'a') as csvfile:
                     writer = csv.writer(csvfile)
                     time_close_tmp = make_time_close_minutes(time_now_tmp)
@@ -162,13 +160,29 @@ while True:
                 symbol_times.append((symbol, time_now_tmp))
 
             if data['RECOMMENDATION'] == 'STRONG_SELL' and symbol not in shorts:
-                send_message(symbol + ' SELL')
+                # send_message(symbol + ' SELL')
                 with open('data.csv', 'a') as csvfile:
                     writer = csv.writer(csvfile)
                     time_close_tmp = make_time_close_minutes(time_now_tmp)
                     writer.writerow(['short', symbol, time_now_tmp, time_close_tmp, None])
                 shorts.append(symbol)
+                symbol_times.append((symbol, time_now_tmp))
             time.sleep(0.1)
+
+            """
+            следующий шаг:
+            сделать ценники
+            сформировать датасет
+            подключить пандас
+            по данным времени с помощью датасета сделать обьект datetime
+            проставить True и False
+            провести статистику
+            """
+            # for elem in symbol_times:
+            #     symbol, time_start_tmp = elem
+            #     if time_start_tmp == make_time_close_minutes(time_start_tmp):
+            #
+            #             symbol_times.remove(elem)
 
         except:
             pass
