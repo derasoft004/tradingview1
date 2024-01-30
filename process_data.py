@@ -5,7 +5,11 @@ import time
 import random
 
 
-df = pd.read_csv('data_10000_1m.csv')
+FILE_SAVE_PATH = 'data_1_1h.csv'
+PRICES_FILE_PATH = 'prices_save_file_1_1h.txt'
+CURRENCY_RESULTS_FILE_PATH = 'saved_ratings_with_currency_1_1h.csv'
+
+df = pd.read_csv(FILE_SAVE_PATH)
 
 print(len(df[['MODE']]))
 RESULTS = []
@@ -14,7 +18,8 @@ RESULTS = []
 def make_request_link(symbol: str, open_normal_time, close_normal_time):
     response = requests.get(f'https://api.binance.com/api/v3/klines?symbol={symbol}'
                             f'&interval=1m&startTime={open_normal_time*1000}&endTime={close_normal_time*1000}')
-    return response.json()[0][4], response.json()[1][4]
+    # print(response.json())
+    return response.json()[0][4], response.json()[-1][4]
 
 
 def separate_symbol_name(name: str) -> (str, str):
@@ -30,7 +35,7 @@ def separate_symbol_name(name: str) -> (str, str):
 
 df_times = df[['SYMBOL', 'TIME-OPEN', 'TIME-CLOSE']]
 open_price_lst, close_price_lst = [], []
-def make_costs_after_data():
+def make_prices_after_data():
     count = 0
     for elem in df_times.values:
         symbol, currency = separate_symbol_name(elem[0])
@@ -45,7 +50,8 @@ def make_costs_after_data():
             opn, cls = make_request_link(symbol + currency, open_normal_time, close_normal_time)
             open_price_lst.append(opn)
             close_price_lst.append(cls)
-            results_save_file = open('results_save_file_10000_1m.txt', 'a')
+
+            results_save_file = open(PRICES_FILE_PATH, 'a')
             if cls > opn:
                 RESULTS.append(2)
                 print(f'{symbol} {currency} : cls {cls} > opn {opn} {cls > opn}')
@@ -69,26 +75,31 @@ def make_costs_after_data():
 
         if not (count % 10):
             print(len(RESULTS), RESULTS)
-# make_costs_after_data()
+
+# make_prices_after_data()
 
 
 lst_currency, res_tmp = [], []
 df_predicts = df[['MODE']]
 def process_txt_file():
-    file = open('results_save_file_10000_1m.txt', 'r')
+    file = open(PRICES_FILE_PATH, 'r')
     for line in file.readlines():
         # print('---', line.split()[-1].replace('\n', ''), sep='') # results
         res_tmp.append(line.split(', ')[-1].replace('\n', ''))
         open_price_lst.append(line.split()[7])
         close_price_lst.append(line.split()[4])
-
+    print("len(df['PRICE-OPEN']): ", len(df['PRICE-OPEN']), "len(df['PRICE-CLOSE']): ", len(df['PRICE-CLOSE']),
+          "\nlen(open_price_lst): ", len(open_price_lst), "len(close_price_lst): ", len(close_price_lst))
     df['PRICE-OPEN'] = open_price_lst
     df['PRICE-CLOSE'] = close_price_lst
+    df['RESULT'] = res_tmp
 
 process_txt_file()
 
-print(len(res_tmp), res_tmp)
-# print('===========================================>', RESULTS == res_tmp)
+
+# print(len(RESULTS), RESULTS)
+# print(len(res_tmp), res_tmp)
+# print('===========================================>', len(RESULTS) == len(res_tmp), ';', RESULTS == res_tmp, '\n')
 
 
 def change_results():
@@ -99,26 +110,27 @@ def change_results():
         if value_count not in (0, 1, 2):
             lst_currency.append(None)
         elif mode == 'long' and value_count == 2:
-            lst_currency.append(True)
+            lst_currency.append('True long')
         elif mode == 'short' and value_count == 1:
-            lst_currency.append(True)
+            lst_currency.append('True short')
         elif value_count == 0:
-            lst_currency.append(False)
+            lst_currency.append('False 0')
         elif mode == 'short' and value_count == 2:
-            lst_currency.append(False)
+            lst_currency.append('False short miss')
         elif mode == 'long' and value_count == 1:
-            lst_currency.append(False)
+            lst_currency.append('False long miss')
         else:
             lst_currency.append(None)
         count += 1
 
-    print(len(df['RESULT']), '==', len(lst_currency))
-    df['RESULT'] = lst_currency
+    # print(len(df['CONFIRMATION']), '==', len(lst_currency))
+    df['CONFIRMATION'] = lst_currency
     print(df)
 
-    df.to_csv('saved_ratings_with_currency_10000_1m.csv')
+    df.to_csv(CURRENCY_RESULTS_FILE_PATH)
 
-    print(df['RESULT'].value_counts())
+    print(df['CONFIRMATION'].value_counts())
+    print(df['MODE'].value_counts())
 
 change_results()
 

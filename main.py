@@ -16,7 +16,7 @@ import csv
 # print(cryptocompare.get_price('GFY'))
 
 
-INTERVAL = Interval.INTERVAL_1_MINUTE
+INTERVAL = Interval.INTERVAL_1_HOUR
 
 TELEGRAM_TOKEN = '6813749013:AAHMwGHqaCpC72ttA-WGdLJyvETXRAYpeb4'
 TELEGRAM_CHANNEL = '@tradingviewname1_bot'
@@ -25,6 +25,7 @@ URL = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}'
 # print(requests.get(URL + '/getUpdates').json()) # выясняем ID чата
 ID = 1191242436
 
+FILE_SAVE_PATH = 'data_3_1h.csv'
 
 def send_message(message):
     URL_MESSAGE = URL + f'/sendMessage?chat_id={ID}&text={message}!'
@@ -122,9 +123,9 @@ def make_time_close_minutes(time_now_tmp):
     return time_now_tmp.replace(time_now_tmp.split(':')[2], time_close_tmp)
 
 
-with open('data_10000_1m.csv', 'w') as csvfile:
+with open(FILE_SAVE_PATH, 'w') as csvfile:
     writer_head = csv.DictWriter(csvfile, fieldnames=['MODE', 'SYMBOL', 'TIME-OPEN', 'PRICE-OPEN', 'TIME-CLOSE',
-                                                      'PRICE-CLOSE', 'RESULT'])
+                                                      'PRICE-CLOSE', 'RESULT', 'CONFIRMATION'])
     writer_head.writeheader()
 
 
@@ -132,62 +133,50 @@ print('START')
 first_data()
 
 
-count_predicts = 0
-symbol_times = []
-main_flag = True
-while main_flag:
-    print('====================NEW ROUND===================')
-    for i in symbols:
-        try:
-            time_now = datetime.datetime.now()
-            data = get_data(i)
-            time_now_tmp = f'{time_now.day}:{time_now.hour}:{time_now.minute}:{time_now.second}'
-            symbol = data['SYMBOL']
-            symbol_name, currency = separate_symbol_name(symbol)
-            # print(cryptocompare.get_price(symbol_name, currency))
-            # print(cryptocompare.get_historical_price(symbol, timestamp=time_now))
+def main():
+    main_flag = True
+    symbol_times = []
+    count_predicts = 0
+    while main_flag:
+        print('====================NEW ROUND===================')
+        for i in symbols:
+            try:
+                time_now = datetime.datetime.now()
+                data = get_data(i)
+                time_now_tmp = f'{time_now.day}:{time_now.hour}:{time_now.minute}:{time_now.second}'
+                symbol = data['SYMBOL']
+                symbol_name, currency = separate_symbol_name(symbol)
+                # print(cryptocompare.get_price(symbol_name, currency))
+                # print(cryptocompare.get_historical_price(symbol, timestamp=time_now))
 
 
-            if data['RECOMMENDATION'] == 'STRONG_BUY' and symbol not in longs:
-                # send_message(symbol + ' BUY')
-                with open('data_10000_1m.csv', 'a') as csvfile:
-                    writer = csv.writer(csvfile)
-                    time_close_tmp = make_time_close_minutes(time_now_tmp)
-                    writer.writerow(['long', symbol, time_now_tmp, None, time_close_tmp, None, None])
-                longs.append(symbol)
-                symbol_times.append((symbol, time_now_tmp))
-                count_predicts += 1
+                if data['RECOMMENDATION'] == 'STRONG_BUY' and symbol not in longs:
+                    # send_message(symbol + ' BUY')
+                    with open(FILE_SAVE_PATH, 'a') as csvfile:
+                        writer = csv.writer(csvfile)
+                        time_close_tmp = make_time_close_hours(time_now_tmp)
+                        writer.writerow(['long', symbol, time_now_tmp, None, time_close_tmp, None, None, None])
+                    longs.append(symbol)
+                    symbol_times.append((symbol, time_now_tmp))
+                    count_predicts += 1
 
-            if data['RECOMMENDATION'] == 'STRONG_SELL' and symbol not in shorts:
-                # send_message(symbol + ' SELL')
-                with open('data_10000_1m.csv', 'a') as csvfile:
-                    writer = csv.writer(csvfile)
-                    time_close_tmp = make_time_close_minutes(time_now_tmp)
-                    writer.writerow(['short', symbol, time_now_tmp, None, time_close_tmp, None, None])
-                shorts.append(symbol)
-                symbol_times.append((symbol, time_now_tmp))
-                count_predicts += 1
+                if data['RECOMMENDATION'] == 'STRONG_SELL' and symbol not in shorts:
+                    # send_message(symbol + ' SELL')
+                    with open(FILE_SAVE_PATH, 'a') as csvfile:
+                        writer = csv.writer(csvfile)
+                        time_close_tmp = make_time_close_hours(time_now_tmp)
+                        writer.writerow(['short', symbol, time_now_tmp, None, time_close_tmp, None, None, None])
+                    shorts.append(symbol)
+                    symbol_times.append((symbol, time_now_tmp))
+                    count_predicts += 1
 
-            time.sleep(0.1)
-            if not (count_predicts % 100): print(count_predicts)
-            if count_predicts == 10000: main_flag = False
-            """
-            следующий шаг:
-            сформировать датасет
-            подключить пандас
-            по данным времени с помощью датасета сделать обьект datetime
-            проставить True и False
-            провести статистику
-            """
-            # for elem in symbol_times:
-            #     symbol, time_start_tmp = elem
-            #     if time_start_tmp == make_time_close_minutes(time_start_tmp):
-            #
-            #             symbol_times.remove(elem)
+                time.sleep(0.1)
+                if not (count_predicts % 100): print(count_predicts)
+                if count_predicts == 10000: main_flag = False
 
-        except:
-            pass
-
+            except:
+                pass
+# main()
 
 
 
