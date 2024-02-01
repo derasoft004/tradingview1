@@ -7,7 +7,7 @@ import csv
 import os
 
 
-INTERVAL = Interval.INTERVAL_1_MINUTE
+INTERVAL = Interval.INTERVAL_1_HOUR
 
 TELEGRAM_TOKEN = '6813749013:AAHMwGHqaCpC72ttA-WGdLJyvETXRAYpeb4'
 TELEGRAM_CHANNEL = '@tradingviewname1_bot'
@@ -16,7 +16,7 @@ URL = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}'
 # print(requests.get(URL + '/getUpdates').json()) # выясняем ID чата
 ID = 1191242436
 
-FILE_SAVE_PATH = 'data_4_1m.csv'
+FILE_SAVE_PATH = 'data_5_1h.csv'
 
 def send_message(message):
     URL_MESSAGE = URL + f'/sendMessage?chat_id={ID}&text={message}!'
@@ -33,7 +33,6 @@ def get_data(symbol):
         interval=INTERVAL
     )
     activiti = output.get_analysis().summary
-    # print('activiti is: ', activiti)
     activiti['SYMBOL'] = symbol
     return activiti
 
@@ -137,7 +136,7 @@ def main():
                                  f'{data["BUY"]}\nSELL: {data["SELL"]}')
                     with open(FILE_SAVE_PATH, 'a') as csvfile:
                         writer = csv.writer(csvfile)
-                        time_close_tmp = make_time_close_minutes(time_now_tmp)
+                        time_close_tmp = make_time_close_hours(time_now_tmp)
                         writer.writerow(['long', symbol, time_now_tmp, None, time_close_tmp, None, None, None])
                     longs.append(symbol)
                     symbol_times.append((symbol, time_now_tmp))
@@ -149,20 +148,19 @@ def main():
                                  f'{data["BUY"]}\nSELL: {data["SELL"]}')
                     with open(FILE_SAVE_PATH, 'a') as csvfile:
                         writer = csv.writer(csvfile)
-                        time_close_tmp = make_time_close_minutes(time_now_tmp)
+                        time_close_tmp = make_time_close_hours(time_now_tmp)
                         writer.writerow(['short', symbol, time_now_tmp, None, time_close_tmp, None, None, None])
                     shorts.append(symbol)
                     symbol_times.append((symbol, time_now_tmp))
                     count_predicts += 1
                     time.sleep(0.1)
 
-                if not (count_predicts % 100): print(count_predicts)
-                if count_predicts == 10000: main_flag = False
+                if count_predicts == 1000: main_flag = False
             except:
                 pass
 
         if not (count_loops % 3):
-            print(f'{longs},\n{shorts},\nare cleared, count_loops = {count_loops}\n')
+            print(f'{longs},\n{shorts},\nare cleared, count_loops = {count_loops}\n{count_predicts}\n')
             longs.clear()
             shorts.clear()
         count_loops += 1

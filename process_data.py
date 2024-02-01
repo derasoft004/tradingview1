@@ -5,9 +5,9 @@ import time
 import random
 
 
-FILE_SAVE_PATH = 'data_4_1m.csv'
-PRICES_FILE_PATH = 'prices_save_file_4_1m.txt'
-CURRENCY_RESULTS_FILE_PATH = 'saved_ratings_with_currency_4_1m.csv'
+FILE_SAVE_PATH = 'data_5_1h.csv'
+PRICES_FILE_PATH = 'prices_save_file_5_1h.txt'
+CURRENCY_RESULTS_FILE_PATH = 'saved_ratings_with_currency_5_1h.csv'
 
 df = pd.read_csv(FILE_SAVE_PATH)
 
