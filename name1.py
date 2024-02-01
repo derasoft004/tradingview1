@@ -31,17 +31,20 @@
 # #
 # # print(f'https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1m&startTime={open_normal_time*1000}&endTime={close_normal_time*1000}')
 
-import pandas as pd
+# import pandas as pd
+#
+# df = pd.DataFrame([[1,'Bob', 'Builder'],
+#                   [2,'Sally', 'Baker'],
+#                   [3,'Scott', 'Candle Stick Maker']],
+#                   columns=['id','name', 'occupation'])
+# df['id'] = [0, 0, 0]
+# print(df)
 
-df = pd.DataFrame([[1,'Bob', 'Builder'],
-                  [2,'Sally', 'Baker'],
-                  [3,'Scott', 'Candle Stick Maker']],
-                  columns=['id','name', 'occupation'])
-df['id'] = [0, 0, 0]
-print(df)
+file = open('data_3_1h.csv', 'r')
+new_file = open('data_3_1h.csv', 'w')
 
-
-
+for line in file.readlines():
+    if len(line) > 1: new_file.write(line)
 
 
 

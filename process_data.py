@@ -5,9 +5,9 @@ import time
 import random
 
 
-FILE_SAVE_PATH = 'data_1_1h.csv'
-PRICES_FILE_PATH = 'prices_save_file_1_1h.txt'
-CURRENCY_RESULTS_FILE_PATH = 'saved_ratings_with_currency_1_1h.csv'
+FILE_SAVE_PATH = 'data_4_1m.csv'
+PRICES_FILE_PATH = 'prices_save_file_4_1m.txt'
+CURRENCY_RESULTS_FILE_PATH = 'saved_ratings_with_currency_4_1m.csv'
 
 df = pd.read_csv(FILE_SAVE_PATH)
 
@@ -22,6 +22,11 @@ def make_request_link(symbol: str, open_normal_time, close_normal_time):
     return response.json()[0][4], response.json()[-1][4]
 
 
+# print(make_request_link('AUDIOUSDT',
+#                   int(datetime.datetime(2024, 1, 31, 15, 0).timestamp()),
+#                   int(datetime.datetime(2024, 1, 31, 15, 1).timestamp())))
+
+
 def separate_symbol_name(name: str) -> (str, str):
     name = name.replace('-', '')
     if 'USDT' in name:
@@ -30,6 +35,9 @@ def separate_symbol_name(name: str) -> (str, str):
         return name.replace('USDC', ''), 'USDC'
     elif 'USD' in name:
         return name.replace('USD', ''), 'USD'
+    elif 'BTC' in name:
+        return name.replace('BTC', ''), 'BTC'
+
     else: return None
 
 
@@ -38,16 +46,22 @@ open_price_lst, close_price_lst = [], []
 def make_prices_after_data():
     count = 0
     for elem in df_times.values:
-        symbol, currency = separate_symbol_name(elem[0])
+        print(elem)
+        try:
+            symbol, currency = separate_symbol_name(elem[0])
+        except TypeError:
+            print(f'in this value: {elem[0]} not USDT, USD or USDC, int the symbol and currency (sep=\' \')')
+            symbol, currency = str(input()).split(' ')
+
 
         lst_open = [int(t) for t in str(elem[1]).split(':')]
-        open_normal_time = int(datetime.datetime(2024, 1, lst_open[0], lst_open[1], lst_open[2]).timestamp())
+        open_normal_time = int(datetime.datetime(2024, lst_open[0], lst_open[1], lst_open[2], lst_open[3]).timestamp())
         lst_close = [int(t) for t in str(elem[2]).split(':')]
-        close_normal_time = int(datetime.datetime(2024, 1, lst_close[0], lst_close[1], lst_close[2]).timestamp())
+        close_normal_time = int(datetime.datetime(2024, lst_close[0], lst_close[1], lst_close[2], lst_close[3]).timestamp())
         print(open_normal_time, close_normal_time)
 
         try:
-            opn, cls = make_request_link(symbol + currency, open_normal_time, close_normal_time)
+            opn, cls = make_request_link(elem[0], open_normal_time, close_normal_time)
             open_price_lst.append(opn)
             close_price_lst.append(cls)
 
@@ -73,36 +87,28 @@ def make_prices_after_data():
         time.sleep(random.random())
         count += 1
 
-        if not (count % 10):
-            print(len(RESULTS), RESULTS)
+        # if not (count % 10):
+            # print(len(RESULTS), RESULTS)
 
-# make_prices_after_data()
+make_prices_after_data()
 
 
 lst_currency, res_tmp = [], []
 df_predicts = df[['MODE']]
-def process_txt_file():
+def process_txt_file_and_change_results():
     file = open(PRICES_FILE_PATH, 'r')
     for line in file.readlines():
         # print('---', line.split()[-1].replace('\n', ''), sep='') # results
         res_tmp.append(line.split(', ')[-1].replace('\n', ''))
-        open_price_lst.append(line.split()[7])
-        close_price_lst.append(line.split()[4])
+        # open_price_lst.append(line.split()[7])
+        # close_price_lst.append(line.split()[4])
     print("len(df['PRICE-OPEN']): ", len(df['PRICE-OPEN']), "len(df['PRICE-CLOSE']): ", len(df['PRICE-CLOSE']),
-          "\nlen(open_price_lst): ", len(open_price_lst), "len(close_price_lst): ", len(close_price_lst))
+          "\nlen(open_price_lst): ", len(open_price_lst), "len(close_price_lst): ", len(close_price_lst),
+          len(res_tmp))
     df['PRICE-OPEN'] = open_price_lst
     df['PRICE-CLOSE'] = close_price_lst
     df['RESULT'] = res_tmp
 
-process_txt_file()
-
-
-# print(len(RESULTS), RESULTS)
-# print(len(res_tmp), res_tmp)
-# print('===========================================>', len(RESULTS) == len(res_tmp), ';', RESULTS == res_tmp, '\n')
-
-
-def change_results():
     count = 0
     for elem in df_predicts.values:
         mode = elem
@@ -132,7 +138,19 @@ def change_results():
     print(df['CONFIRMATION'].value_counts())
     print(df['MODE'].value_counts())
 
-change_results()
+process_txt_file_and_change_results()
+# process_txt_file()
+
+
+# print(len(RESULTS), RESULTS)
+# print(len(res_tmp), res_tmp)
+# print('===========================================>', len(RESULTS) == len(res_tmp), ';', RESULTS == res_tmp, '\n')
+
+
+# def change_results():
+#
+#
+# change_results()
 
 
 
