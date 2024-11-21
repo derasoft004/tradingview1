@@ -1,36 +1,25 @@
-from tradingview_ta import TA_Handler, Interval, Exchange
-from binance.um_futures import UMFutures
 import time
 import datetime
-import requests
 import csv
 import os
 
+from tradingview_ta import TA_Handler, Interval, Exchange
+from binance.um_futures import UMFutures
 
-INTERVAL = Interval.INTERVAL_1_HOUR
+from config import FILE_SAVE_PATH
+from bot_handler import send_message
 
-TELEGRAM_TOKEN = '6813749013:AAHMwGHqaCpC72ttA-WGdLJyvETXRAYpeb4'
-TELEGRAM_CHANNEL = '@tradingviewname1_bot'
-URL = f'https://api.telegram.org/bot{TELEGRAM_TOKEN}'
-
-# print(requests.get(URL + '/getUpdates').json()) # выясняем ID чата
-ID = 1191242436
-
-FILE_SAVE_PATH = 'data_5_1h.csv'
-
-def send_message(message):
-    URL_MESSAGE = URL + f'/sendMessage?chat_id={ID}&text={message}!'
-    requests.get(URL_MESSAGE) # отсылаем сообщение
 
 
 client = UMFutures()
 
-def get_data(symbol):
+
+def get_data(symbol, interval):
     output = TA_Handler(
         symbol=symbol,
         screener='Crypto',
         exchange='Binance',
-        interval=INTERVAL
+        interval=interval
     )
     activiti = output.get_analysis().summary
     activiti['SYMBOL'] = symbol
@@ -60,11 +49,11 @@ def separate_symbol_name(name: str) -> (str, str):
         return name.replace('USD', ''), 'USD'
     else: return None
 
-def first_data():
+def first_data(interval):
     # print('Search first data')
     for i in symbols:
         try:
-            data = get_data(i)
+            data = get_data(i, interval)
             if data['RECOMMENDATION'] == 'STRONG_BUY':
                 longs.append(data['SYMBOL'])
 
@@ -75,7 +64,6 @@ def first_data():
             pass
     return longs, shorts
 
-
 def make_time_close_days(time_now_tmp) -> str:
     time_close_tmp = int(str(time_now_tmp).split(':')[1])
     if 0 <= time_close_tmp < 30:
@@ -83,7 +71,6 @@ def make_time_close_days(time_now_tmp) -> str:
     elif time_close_tmp == 30:
         time_close_tmp = 1
     return time_now_tmp.replace(time_now_tmp.split(':')[1], str(time_close_tmp))
-
 
 def make_time_close_hours(time_now_tmp) -> str:
     time_close_tmp = int(str(time_now_tmp).split(':')[2])
@@ -93,7 +80,6 @@ def make_time_close_hours(time_now_tmp) -> str:
         time_close_tmp = 0
         time_now_tmp = make_time_close_days(time_now_tmp)
     return time_now_tmp.replace(time_now_tmp.split(':')[2], str(time_close_tmp))
-
 
 def make_time_close_minutes(time_now_tmp) -> str:
     time_close_tmp = int(str(time_now_tmp).split(':')[3])
@@ -113,7 +99,8 @@ if not os.path.exists(FILE_SAVE_PATH):
 
 
 print('START')
-first_data()
+INTERVAL = Interval.INTERVAL_1_MINUTE
+first_data(INTERVAL)
 
 
 def main():
@@ -125,7 +112,7 @@ def main():
         for i in symbols:
             try:
                 time_now = datetime.datetime.now()
-                data = get_data(i)
+                data = get_data(i, INTERVAL)
                 print('==========', i, data, '==========', sep='=====')
                 time_now_tmp = f'{time_now.month}:{time_now.day}:{time_now.hour}:{time_now.minute}:{time_now.second}'
                 symbol = data['SYMBOL']
