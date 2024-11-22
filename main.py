@@ -9,8 +9,6 @@ from binance.um_futures import UMFutures
 from config import FILE_SAVE_PATH
 from bot_handler import send_message
 
-
-
 client = UMFutures()
 
 
@@ -22,6 +20,7 @@ def get_data(symbol, interval):
         interval=interval
     )
     activiti = output.get_analysis().summary
+    print(activiti)
     activiti['SYMBOL'] = symbol
     return activiti
 
@@ -36,6 +35,7 @@ def get_symbols():
 
 
 symbols = get_symbols()
+print(symbols)
 longs, shorts = [], []
 
 
@@ -48,6 +48,7 @@ def separate_symbol_name(name: str) -> (str, str):
     elif 'USD' in name:
         return name.replace('USD', ''), 'USD'
     else: return None
+
 
 def first_data(interval):
     # print('Search first data')
