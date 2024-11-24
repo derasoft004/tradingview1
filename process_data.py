@@ -15,7 +15,7 @@ print(len(df[['MODE']]))
 RESULTS = []
 
 
-def make_request_link(symbol: str, open_normal_time, close_normal_time):
+def make_request_link_tradingview(symbol: str, open_normal_time, close_normal_time):
     response = requests.get(f'https://api.binance.com/api/v3/klines?symbol={symbol}'
                             f'&interval=1m&startTime={open_normal_time*1000}&endTime={close_normal_time*1000}')
     # print(response.json())
