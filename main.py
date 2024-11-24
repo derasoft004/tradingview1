@@ -40,7 +40,7 @@ def main():
             INTERVAL = Interval.INTERVAL_1_HOUR
             INTERVAL_TYPE = 'a hour'
             TIME_SECONDS = 3600
-            INTERVAL_CLEAR_TIMER = timedelta(minutes=15)
+            INTERVAL_CLEAR_TIMER = timedelta(minutes=30)
         case 'fh':
             INTERVAL = Interval.INTERVAL_4_HOURS
             INTERVAL_TYPE = 'four hours'

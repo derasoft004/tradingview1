@@ -1,8 +1,9 @@
 import pandas as pd
 from datetime import datetime
 import requests
+from config import FILE_DATA_PATH, FILE_DATA_PRICE_OPEN_PATH
 
-DATA_DF = pd.read_csv('data_forecasts.csv')
+DATA_DF = pd.read_csv(FILE_DATA_PATH)
 
 def request_binance(symbol: str, open_time: datetime, close_time: datetime, interval: str = '1h') -> str:
     """
@@ -68,42 +69,117 @@ def get_open_prices(df: pd.DataFrame) -> list:
     return open_prices_lst
 
 
-def add_open_price_column() -> None:
-    open_prices = get_open_prices(DATA_DF)
-    DATA_DF['PRICE-OPEN'] = open_prices
-    DATA_DF.to_csv('data_forecasts_price_open.csv')
+def add_some_column(file_name: str, column_name: str, data) -> None:
+    DATA_DF[column_name] = data
+    DATA_DF.to_csv(file_name)
 
 
 def get_symbol_prices_in_interval(symbol: str, open_time: datetime, close_time: datetime) -> dict:
     interval = '1m'
-    prices_in_interval_lst = {}
+    prices_in_interval_dict = {}
 
     prices_link = request_binance(symbol, open_time, close_time, interval)
     response = requests.get(prices_link)
     full_interval_data = response.json()
-    for data_lst in full_interval_data:
+    for data_to_min in full_interval_data:
         prices_dict = {
-            'open_price': data_lst[1],
-            'high_price': data_lst[2],
-            'low_price': data_lst[3],
-            'close_price': data_lst[4],
+            'open_price': float(data_to_min[1]),
+            'high_price': float(data_to_min[2]),
+            'low_price': float(data_to_min[3]),
+            'close_price': float(data_to_min[4]),
 
         }
-        cur_time_prices = datetime.fromtimestamp(data_lst[0] / 1000)
-        prices_in_interval_lst[cur_time_prices] = prices_dict
+        cur_time_prices = datetime.fromtimestamp(data_to_min[0] / 1000)
+        prices_in_interval_dict[cur_time_prices] = prices_dict
 
-    return prices_in_interval_lst
+    return prices_in_interval_dict
 
 
 
 def get_max_and_min_price():
 
     trg_time1 = datetime(2024, 11, 24, 15, 10)
-    trg_time2 = datetime(2024, 11, 24, 15, 20)
+    trg_time2 = datetime(2024, 11, 24, 15, 30)
 
     prices_dictionary = get_symbol_prices_in_interval('BTCUSDT', trg_time1, trg_time2)
+    max_price, min_price = 0, 999999999999999999
     for time_, prices in prices_dictionary.items():
-        pass
+        if prices['high_price'] > max_price:
+            max_price = prices['high_price']
+        if prices['low_price'] < min_price:
+            min_price = prices['low_price']
+
+    return max_price, min_price
+
+
+def check_changing_in_interval(mode: str, symbol: str, open_price: float, open_time: datetime, close_time: datetime):
+    prices_dictionary = get_symbol_prices_in_interval(symbol, open_time, close_time)
+    one_percent = open_price / 100
+    print(f"Symbol: {symbol}")
+    if mode == 'long':
+        long_price_prof = open_price + one_percent * 5
+        close_price = open_price - one_percent * 3
+        print(f"open_time: {open_time}\nopen_price: {open_price}\n1%: {one_percent}\nlong_price_prof: {long_price_prof}\nclose_price: {close_price}")
+        for time_, prices in prices_dictionary.items():
+            max_price_minute = prices['high_price']
+            min_price_minute = prices['low_price']
+            if max_price_minute >= long_price_prof: # в интервале лонг прогнозирован правильно
+                print('time win:', time_, max_price_minute)
+                return 1
+            elif min_price_minute <= close_price: # в интервале лонг прогнозирован неправильно
+                print('time los:', time_, min_price_minute)
+                return -1
+
+    elif mode == 'short':
+        short_price_prof = open_price - one_percent * 5
+        close_price = open_price + one_percent * 3
+        print(f"open_time: {open_time}\nopen_price: {open_price}\n1%: {one_percent}\nshort_price_prof: {short_price_prof}\nclose_price: {close_price}")
+
+        for time_, prices in prices_dictionary.items():
+            max_price_minute = prices['high_price']
+            min_price_minute = prices['low_price']
+            if min_price_minute <= short_price_prof: # в интервале шорт прогнозирован правильно
+                print('time win:', time_, max_price_minute)
+                return 1
+            elif max_price_minute >= close_price: # в интервале шорт прогнозирован неправильно
+                print('time los:', time_, min_price_minute)
+                return -1
+
+    return 0
+
+
+# trg_time1 = datetime(2024, 11, 24, 12, 7)
+# trg_time2 = datetime(2024, 11, 24, 16, 1)
+
+# print(check_changing_in_interval('short', 'LINKUSDT', 17.8224, trg_time1, trg_time2))
+
+def check_data_forecasts():
+    # lst_open_prices = get_open_prices(DATA_DF)
+    # add_some_column(FILE_DATA_PRICE_OPEN_PATH, 'PRICE-OPEN', lst_open_prices)
+    total_forecasts_dict = {"win": 0,
+                            "los": 0}
+    DATA_DF_OPEN_PRICE = pd.read_csv(FILE_DATA_PRICE_OPEN_PATH)
+
+    for row in DATA_DF_OPEN_PRICE.itertuples(index=False):
+        mode = row.MODE
+        symbol = row.SYMBOL
+        time_open = row[5].split('.')[0]
+        price_open = row[6]
+
+        time_open_datetime = datetime.strptime(time_open, '%Y-%m-%d %H:%M:%S').replace(second=0)
+        time_now = datetime.now()
+
+        res = check_changing_in_interval(mode, symbol, price_open, time_open_datetime, time_now)
+        if res == 1:
+            total_forecasts_dict["win"] += 1
+        if res == -1:
+            total_forecasts_dict["los"] += 1
+    total_sum = total_forecasts_dict["win"] + total_forecasts_dict["los"]
+    print(f"Forecasts count: {len(DATA_DF_OPEN_PRICE)}\n"
+          f"Correctness of forecasts: {total_forecasts_dict}\n"
+          f"Total sum: {total_sum}")
+
+check_data_forecasts()
 
 
 
