@@ -53,7 +53,7 @@ def main():
             INTERVAL_CLEAR_TIMER = timedelta(hours=6)
 
     symbol_list = get_list_symbols(FILE_SYMBOLS_PATH)
-
+    print(f"symbol_list len: {len(symbol_list)}")
     data_collection(symbol_list, INTERVAL, INTERVAL_TYPE, FILE_DATA_PATH, TIME_SECONDS, INTERVAL_CLEAR_TIMER)
 
 

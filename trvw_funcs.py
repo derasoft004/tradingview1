@@ -3,15 +3,13 @@ import os
 from datetime import datetime, timedelta, timezone
 import logging
 import time
-from os import close
+from typing import Tuple
 
 import requests
-import pytz
 
-from tradingview_ta import TA_Handler, Interval, Exchange
-from binance.um_futures import UMFutures
+from tradingview_ta import TA_Handler, Interval
 
-from config import FILE_DATA_PATH
+from config import FILE_DATA_PATH, FILE_SYMBOLS_PATH, API_URL_BYBIT
 
 
 def get_symbol_forecast(symbol: str, interval: Interval) -> dict:
@@ -38,7 +36,7 @@ def get_symbol_forecast(symbol: str, interval: Interval) -> dict:
         interval=interval
     )
     activiti = output.get_analysis().summary
-    activiti['SYMBOL'] = symbol
+    # activiti['SYMBOL'] = symbol
     return activiti
 
 
@@ -79,17 +77,65 @@ def write_data_to_csv_file(file_path: str, fields_data_list: list) -> None:
                     writer.writerow(fields_data_list)
                     logging.info(f'\'fields_data_list\' was writen to file {file_path} successfully.\n')
     except FileNotFoundError as not_found_error:
-        logging.error(not_found_error)
+        print(not_found_error)
         return
 
 
-def make_offer_link():
-    """
-    link binance api: https://developers.binance.com/docs/binance-spot-api-docs/rest-api/public-api-endpoints#new-order-trade
-    form: POST /api/v3/order
-    :return:
-    """
-    pass
+def get_kline_bybit_open_price(symbol: str, interval: str, category: str, start) -> float:
+    url = f"{API_URL_BYBIT}/v5/market/kline"
+
+    start_modify = int(start.timestamp() * 1000)
+
+    params = {
+        "symbol": symbol,
+        "interval": interval,
+        "category": category,
+        "start": start_modify,
+        "end": start_modify
+    }
+    response = requests.get(url, params=params)
+    full_data_json = response.json()
+    # print(full_data_json)
+    result = full_data_json["result"]
+    if not len(result):
+        raise AttributeError
+    full_minute_data = result["list"][0]
+    open_price = full_minute_data[1]
+
+    return open_price
+
+
+def get_kline_binance_open_price(symbol: str, interval: str, open_time: datetime) -> float:
+    open_normal_time = int(open_time.timestamp() * 1000)
+    url = f'https://api.binance.com/api/v3/klines'
+
+    params = {
+        "symbol": symbol,
+        "interval": interval,
+        "startTime": open_normal_time,
+        "endTime": open_normal_time
+    }
+
+    response = requests.get(url, params=params)
+    full_data_json = response.json()
+    open_price = float(full_data_json[0][1])
+
+    return open_price
+
+
+def get_open_price(symbol: str, target_time) -> Tuple:
+    interval = "1"
+    category = "spot"
+
+    platform_name = "BYBIT"
+    try:
+        price_open = get_kline_bybit_open_price(symbol, interval, category, target_time)
+    except AttributeError:
+        platform_name = "BINANCE"
+        interval = "1m"
+        price_open = get_kline_binance_open_price(symbol, interval, target_time)
+
+    return platform_name, price_open
 
 
 def data_collection(symbols_list: list,
@@ -110,77 +156,80 @@ def data_collection(symbols_list: list,
     :param interval_clear_timer:
     :return:
     """
-    fields_names = ['MODE', 'INTERVAL', 'SYMBOL', 'FORECAST', 'TIME-OPEN', 'PRICE-OPEN',
-                    'TIME-MAX-PRICE', 'MAX-PRICE', 'TIME-TO-MAX-PRICE',
-                    'TIME-MIN-PRICE', 'MIN-PRICE', 'TIME-TO-MIN-PRICE',
-                    'CONFIRMATION']
+    fields_names = ['MODE', 'INTERVAL', 'SYMBOL', 'FORECAST', 'TIME-OPEN', 'PRICE-OPEN', 'PLATFORM_NAME', 'CONFIRMATION', ]
 
     write_data_to_csv_file(FILE_DATA_PATH, fields_names)
 
-    longs, shorts = [], []
+    longs, shorts = set(), set()
 
-    forecasts_dict = {symbol_name: {} for symbol_name in symbols_list}
+    # forecasts_dict = {symbol_name: {} for symbol_name in symbols_list}
     round_number = 0
-    time_start = datetime.now().replace(second=0) # время по дубай
+    time_start = datetime.now().replace(second=0, microsecond=0) # время по дубай
     next_time = time_start + interval_clear_timer
-    print('now time is: ', time_start, 'next time is: ', next_time.strftime('%Y-%m-%d %H:%M:%S'))
+    print(f"now time is: {time_start} next time is: {next_time.strftime('%Y-%m-%d %H:%M:%S')}")
     while True:
         print(f"==========NEW={round_number}=ROUND==========\n"
               f"longs: {longs}\n"
               f"shorts: {shorts}")
+        print(f"==========NEW={round_number}=ROUND==========\n")
+        symbols_list_except = []
+
         for symbol in symbols_list:
-            time_now = datetime.now().replace(second=0) # время по дубай
+            time_now = datetime.now().replace(second=0, microsecond=0) # время по дубай
             try:
                 forecast = get_symbol_forecast(symbol, interval)
-                forecast_string = ';'.join([f"{key}:{value}" for key, value in forecast.items()])
-                fields_symbol_data = ['', interval_type, symbol, forecast_string, time_now, None,
-                                      None, None, None,
-                                      None, None, None,
-                                      None]
+                forecast_string = ';'.join([f"{value}" for key, value in forecast.items()])
+                fields_symbol_data = ['', interval_type, symbol, forecast_string, time_now, None, None, None]
                 if symbol in longs or symbol in shorts:
-                    # проверим, не обновился прогноз ли для символа
-                    if forecast != forecasts_dict[symbol]:
-                        forecasts_dict[symbol] = forecast
-                            # todo удаление из лонгов/шортов происходит только если сделка завершена
-                            #  + результат сделки нужно сохранять; сделать проверку в цикле (интервально во времени)
-                            # if symbol in longs:
-                            #     print(f"DELETE {symbol} from longs")
-                            #     longs.remove(symbol)
-                            # elif symbol in shorts:
-                            #     print(f"DELETE {symbol} from shorts")
-                            #     shorts.remove(symbol)
-                    else:
+                    # if forecast != forecasts_dict[symbol]:
+                    #     forecasts_dict[symbol] = forecast
+                    #         # todo удаление из лонгов/шортов происходит только если сделка завершена
+                    #         #  + результат сделки нужно сохранять; сделать проверку в цикле (интервально во времени)
+                    # else:
                         continue
 
                 if int(forecast['NEUTRAL']) <= 10:
                     match forecast['RECOMMENDATION']:
                         case 'STRONG_BUY':
+                            platform_name, price = get_open_price(symbol, time_now)
                             fields_symbol_data[0] = 'long'
-                            longs.append(symbol)
+                            fields_symbol_data[5] = price
+                            fields_symbol_data[6] = platform_name
                             write_data_to_csv_file(file_data_store, fields_symbol_data)
+                            print(fields_symbol_data, 'записано')
+                            longs.add(symbol)
                             print(f"FORECAST FOR {symbol}: {forecast}")
-                            forecasts_dict[symbol] = forecast
-                        case 'STRONG_SELL':
-                            fields_symbol_data[0] = 'short'
-                            shorts.append(symbol)
-                            write_data_to_csv_file(file_data_store, fields_symbol_data)
-                            print(f"FORECAST FOR {symbol}: {forecast}")
-                            forecasts_dict[symbol] = forecast
+                            # forecasts_dict[symbol] = forecast
 
+                        case 'STRONG_SELL':
+                            platform_name, price = get_open_price(symbol, time_now)
+                            fields_symbol_data[0] = 'short'
+                            fields_symbol_data[5] = price
+                            fields_symbol_data[6] = platform_name
+                            write_data_to_csv_file(file_data_store, fields_symbol_data)
+                            print(fields_symbol_data, 'записано')
+                            shorts.add(symbol)
+                            print(f"FORECAST FOR {symbol}: {forecast}")
+                            # forecasts_dict[symbol] = forecast
 
                 time.sleep(0.01)
+
             except IndentationError as e:
-                logging.error(f"unexpected indent (?); {e}")
+                print(f"unexpected indent (?); {e}")
 
             except Exception as e:
-                logging.error(f"func 'data_collection' cycle error, symbol: {symbol}; {e}")
+                print(f"func 'data_collection' cycle error, symbol: {symbol}; {e}")
                 symbols_list.remove(symbol)
+                symbols_list_except.append(symbol)
 
         round_number += 1
 
+        with open(FILE_SYMBOLS_PATH, 'w') as smbls_file:
+            smbls_file.write(','.join([x for x in symbols_list if x not in symbols_list_except]))
+
         if time_now >= next_time:
             next_time = time_now + interval_clear_timer
-            print('now time is: ', time_now, 'next time is: ', next_time.strftime('%Y-%m-%d %H:%M:%S'))
+            print(f"now time is: {time_now} next time is: {next_time.strftime('%Y-%m-%d %H:%M:%S')}")
             longs.clear()
             shorts.clear()
 

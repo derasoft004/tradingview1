@@ -1,125 +1,147 @@
+from math import log10
+
 import pandas as pd
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests
-from config import FILE_DATA_PATH, FILE_DATA_PRICE_OPEN_PATH
+from config import API_URL_BYBIT, FILE_DATA_PATH_WITH_SOME_CONFIRMATION
 
-DATA_DF = pd.read_csv(FILE_DATA_PATH)
-
-def request_binance(symbol: str, open_time: datetime, close_time: datetime, interval: str = '1h') -> str:
-    """
-    link binance api: https://developers.binance.com/docs/binance-spot-api-docs/rest-api/public-api-endpoints#klinecandlestick-data
-
-    lnk1 = request_binance('BTCUSDT')
-    ' response structure
-    [
-      [
-        1499040000000,      // Kline open time
-        "0.01634790",       // Open price
-        "0.80000000",       // High price
-        "0.01575800",       // Low price
-        "0.01577100",       // Close price
-        "148976.11427815",  // Volume
-        1499644799999,      // Kline Close time
-        "2434.19055334",    // Quote asset volume
-        308,                // Number of trades
-        "1756.87402397",    // Taker buy base asset volume
-        "28.46694368",      // Taker buy quote asset volume
-        "0"                 // Unused field, ignore.
-      ]
-    ]
-    '
-    :param symbol:
-    :param open_time:
-    :param close_time:
-    :param interval: minutes	1m, 3m, 5m, 15m, 30m
-                     hours	 1h, 2h, 4h, 6h, 8h, 12h
-                     days	 1d, 3d
-    :return:
-    """
-    open_normal_time = int(open_time.timestamp() * 1000)
-    close_normal_time = int(close_time.timestamp() * 1000)
-    return f'https://api.binance.com/api/v3/klines?symbol={symbol}' \
-           f'&interval={interval}&startTime={open_normal_time}&endTime={close_normal_time}'
+DATA_DF = pd.read_csv(FILE_DATA_PATH_WITH_SOME_CONFIRMATION)
 
 
-def request_binance_one_time(symbol: str, target_time: datetime) -> str:
-    target_time_ms = int(target_time.timestamp() * 1000)
-    return f'https://api.binance.com/api/v3/klines?symbol={symbol}' \
-           f'&interval=1m&startTime={target_time_ms}&endTime={target_time_ms}'
-
-
-def get_open_prices(df: pd.DataFrame) -> list:
-    symbols, times = df['SYMBOL'], df['TIME-OPEN']
-    open_prices_lst = []
-
-    for i in range(len(symbols)):
-        symbol = symbols[i]
-
-        date_time_str = times[i].split('.')[0]
-        date_time_format = '%Y-%m-%d %H:%M:%S'
-        date_time_obj = datetime.strptime(date_time_str, date_time_format).replace(second=0)
-
-        link1 = request_binance_one_time(symbol, date_time_obj)
-        response = requests.get(link1)
-        r_obj = response.json()
-
-        price_close = r_obj[0][1]
-        open_prices_lst.append(price_close)
-        print(symbol, 'time open:', date_time_obj, 'price open:', price_close)
-    return open_prices_lst
-
-
-def add_some_column(file_name: str, column_name: str, data) -> None:
-    DATA_DF[column_name] = data
-    DATA_DF.to_csv(file_name)
-
-
-def get_symbol_prices_in_interval(symbol: str, open_time: datetime, close_time: datetime) -> dict:
-    interval = '1m'
+def get_kline_binance(symbol: str, start_time: datetime, end_time: datetime) -> dict:
     prices_in_interval_dict = {}
 
-    prices_link = request_binance(symbol, open_time, close_time, interval)
-    response = requests.get(prices_link)
-    full_interval_data = response.json()
-    for data_to_min in full_interval_data:
-        prices_dict = {
-            'open_price': float(data_to_min[1]),
-            'high_price': float(data_to_min[2]),
-            'low_price': float(data_to_min[3]),
-            'close_price': float(data_to_min[4]),
+    url = f'https://api.binance.com/api/v3/klines'
 
+    def get_prices(start_timestamp_, end_timestamp_):
+        # print('s:', datetime.fromtimestamp(int(start_timestamp_) / 1000), start_timestamp_,
+        #       'e:', datetime.fromtimestamp(int(end_timestamp_) / 1000), end_timestamp_)
+
+        interval = '1m'
+
+        params = {
+            "symbol": symbol,
+            "interval": interval,
+            "startTime": start_timestamp_,
+            "endTime": end_timestamp_
         }
-        cur_time_prices = datetime.fromtimestamp(data_to_min[0] / 1000)
-        prices_in_interval_dict[cur_time_prices] = prices_dict
+
+        response = requests.get(url, params=params)
+        full_interval_data = response.json()
+        # print(f"---{full_interval_data}---\n\n\n")
+        for data_to_min in full_interval_data:
+            prices_dict = {
+                'open_price': float(data_to_min[1]),
+                'high_price': float(data_to_min[2]),
+                'low_price': float(data_to_min[3]),
+                'close_price': float(data_to_min[4]),
+            }
+            cur_time_prices = datetime.fromtimestamp(int(data_to_min[0]) / 1000)
+            prices_in_interval_dict[cur_time_prices] = prices_dict
+
+    different_times_hours_and_minutes = (end_time - start_time).total_seconds() / 3600
+
+    new_start = start_time
+    new_start_timestamp = int(new_start.timestamp() * 1000)
+    new_end = new_start + timedelta(hours=8)
+    new_end_timestamp = int(new_end.timestamp() * 1000)
+
+    while different_times_hours_and_minutes > 8:
+        different_times_hours_and_minutes -= 8
+
+        get_prices(new_start_timestamp, new_end_timestamp)
+
+        new_start = new_end
+        new_start_timestamp = int(new_start.timestamp() * 1000)
+        new_end = new_start + timedelta(hours=8)
+        new_end_timestamp = int(new_end.timestamp() * 1000)
+
+    else:
+        new_end = end_time
+        new_end_timestamp = int(new_end.timestamp() * 1000)
+        get_prices(new_start_timestamp, new_end_timestamp)
+
+    return prices_in_interval_dict
+
+
+def get_kline_bybit(symbol: str, start: datetime, end: datetime) -> dict:
+    prices_in_interval_dict = {}
+
+    def get_prices(start_timestamp_, end_timestamp_):
+        # print('s:', datetime.fromtimestamp(int(start_timestamp_) / 1000), start_timestamp_,
+        #       'e:', datetime.fromtimestamp(int(end_timestamp_) / 1000), end_timestamp_)
+
+        interval = '1'
+        category = "spot"
+
+        url = f"{API_URL_BYBIT}/v5/market/kline"
+        params = {
+            "symbol": symbol,
+            "interval": interval,
+            "category": category,
+            "start": start_timestamp_,
+            "end": end_timestamp_
+        }
+        response = requests.get(url, params=params)
+        full_data_json = response.json()
+        result = full_data_json["result"]
+        full_interval_data = result["list"][::-1]
+        # print(f"---{full_interval_data}---\n\n\n")
+        for data_to_min in full_interval_data:
+            prices_dict = {
+                'open_price': float(data_to_min[1]),
+                'high_price': float(data_to_min[2]),
+                'low_price': float(data_to_min[3]),
+                'close_price': float(data_to_min[4]),
+            }
+            cur_time_prices = datetime.fromtimestamp(int(data_to_min[0]) / 1000)
+            prices_in_interval_dict[cur_time_prices] = prices_dict
+
+    different_times_hours_and_minutes = (end - start).total_seconds() / 3600
+
+    new_start = start
+    new_start_timestamp = int(new_start.timestamp() * 1000)
+    new_end = new_start + timedelta(hours=3)
+    new_end_timestamp = int(new_end.timestamp() * 1000)
+
+    while different_times_hours_and_minutes > 3:
+        different_times_hours_and_minutes -= 3
+
+        get_prices(new_start_timestamp, new_end_timestamp)
+
+        new_start = new_end
+        new_start_timestamp = int(new_start.timestamp() * 1000)
+        new_end = new_start + timedelta(hours=3)
+        new_end_timestamp = int(new_end.timestamp() * 1000)
+
+    else:
+        new_end = end
+        new_end_timestamp = int(new_end.timestamp() * 1000)
+        get_prices(new_start_timestamp, new_end_timestamp)
+
 
     return prices_in_interval_dict
 
 
 
-def get_max_and_min_price():
-
-    trg_time1 = datetime(2024, 11, 24, 15, 10)
-    trg_time2 = datetime(2024, 11, 24, 15, 30)
-
-    prices_dictionary = get_symbol_prices_in_interval('BTCUSDT', trg_time1, trg_time2)
-    max_price, min_price = 0, 999999999999999999
-    for time_, prices in prices_dictionary.items():
-        if prices['high_price'] > max_price:
-            max_price = prices['high_price']
-        if prices['low_price'] < min_price:
-            min_price = prices['low_price']
-
-    return max_price, min_price
-
-
-def check_changing_in_interval(mode: str, symbol: str, open_price: float, open_time: datetime, close_time: datetime):
-    prices_dictionary = get_symbol_prices_in_interval(symbol, open_time, close_time)
+def check_changing_in_interval(mode: str,
+                               symbol: str,
+                               open_price: float,
+                               open_time: datetime,
+                               close_time: datetime,
+                               platform_name: str,
+                               show_lst_no_res: bool = False):
+    if platform_name == "BYBIT":
+        prices_dictionary = get_kline_bybit(symbol, open_time, close_time)
+    elif platform_name == "BINANCE":
+        prices_dictionary = get_kline_binance(symbol, open_time, close_time)
     one_percent = open_price / 100
     print(f"Symbol: {symbol}")
     if mode == 'long':
         long_price_prof = open_price + one_percent * 5
         close_price = open_price - one_percent * 3
-        print(f"open_time: {open_time}\nopen_price: {open_price}\n1%: {one_percent}\nlong_price_prof: {long_price_prof}\nclose_price: {close_price}")
+        print(f"open_time: {open_time}\nopen_price: {open_price}\n1%: "
+              f"{one_percent}\nlong_price_prof: {long_price_prof}\nclose_price: {close_price}")
         for time_, prices in prices_dictionary.items():
             max_price_minute = prices['high_price']
             min_price_minute = prices['low_price']
@@ -133,7 +155,8 @@ def check_changing_in_interval(mode: str, symbol: str, open_price: float, open_t
     elif mode == 'short':
         short_price_prof = open_price - one_percent * 5
         close_price = open_price + one_percent * 3
-        print(f"open_time: {open_time}\nopen_price: {open_price}\n1%: {one_percent}\nshort_price_prof: {short_price_prof}\nclose_price: {close_price}")
+        print(f"open_time: {open_time}\nopen_price: {open_price}\n1%: "
+              f"{one_percent}\nshort_price_prof: {short_price_prof}\nclose_price: {close_price}")
 
         for time_, prices in prices_dictionary.items():
             max_price_minute = prices['high_price']
@@ -144,40 +167,107 @@ def check_changing_in_interval(mode: str, symbol: str, open_price: float, open_t
             elif max_price_minute >= close_price: # в интервале шорт прогнозирован неправильно
                 print('time los:', time_, min_price_minute)
                 return -1
-
+    if show_lst_no_res:
+        print(prices_dictionary.items())
     return 0
 
 
-# trg_time1 = datetime(2024, 11, 24, 12, 7)
-# trg_time2 = datetime(2024, 11, 24, 16, 1)
+def get_count_to_print(n: int) -> int:
+    if not n:
+        return 0
+    formula_Stregera = int(1 + 3.3222 * log10(n))
+    return formula_Stregera
 
-# print(check_changing_in_interval('short', 'LINKUSDT', 17.8224, trg_time1, trg_time2))
+
+def get_data_in_range(start: int, end: int) -> dict:
+    count = start
+    ret_dict = {}
+    df = DATA_DF[start:end]
+    print(df.head(5), df.tail(5))
+    for row in df.itertuples(index=False):
+        count += 1
+        mode = row.MODE
+        if count - 1 < start or count - 1 > end or mode == "MODE":
+            continue
+        ret_dict[count] = row
+    return ret_dict
+
 
 def check_data_forecasts():
-    # lst_open_prices = get_open_prices(DATA_DF)
-    # add_some_column(FILE_DATA_PRICE_OPEN_PATH, 'PRICE-OPEN', lst_open_prices)
+    """
+    для добавления из FILE_DATA_PATH в FILE_DATA_PATH_WITH_SOME_CONFIRMATION:
+    from config import FILE_DATA_PATH,FILE_DATA_PATH_WITH_SOME_CONFIRMATION, FILE_DATA_PATH_TMP, FILE_DATA_PATH_WITH_SOME_CONFIRMATION_TMP
+    import pandas as pd
+
+    OLD_DF = pd.read_csv(FILE_DATA_PATH)
+    DATA_DF = pd.read_csv(FILE_DATA_PATH_WITH_SOME_CONFIRMATION, index_col=0)
+    df_tmp = pd.concat([DATA_DF, OLD_DF[1391:]], ignore_index=True)
+    :return:
+    """
     total_forecasts_dict = {"win": 0,
                             "los": 0}
-    DATA_DF_OPEN_PRICE = pd.read_csv(FILE_DATA_PRICE_OPEN_PATH)
+    count, use_count = 0, False
+    list_win, list_los, list_no_res = [], [], []
+    show_lst_no_res = False
+    dict_allowed_rows = get_data_in_range(1391, 1983) # (107, 470)
 
-    for row in DATA_DF_OPEN_PRICE.itertuples(index=False):
+    for index, row in dict_allowed_rows.items():
+        print(index - 1)
+        if count == 10 and use_count:
+            break
         mode = row.MODE
         symbol = row.SYMBOL
-        time_open = row[5].split('.')[0]
-        price_open = row[6]
+        time_open = row[5]
+        price_open = float(row[6])
+        platform_name = row[7]
+        time_open_datetime = datetime.strptime(time_open, '%Y-%m-%d %H:%M:%S')
 
-        time_open_datetime = datetime.strptime(time_open, '%Y-%m-%d %H:%M:%S').replace(second=0)
-        time_now = datetime.now()
-
-        res = check_changing_in_interval(mode, symbol, price_open, time_open_datetime, time_now)
+        time_now = datetime.now().replace(second=0, microsecond=0)
+        print(time_open_datetime, time_now)
+        res = check_changing_in_interval(mode, symbol, price_open, time_open_datetime, time_now, platform_name, show_lst_no_res)
         if res == 1:
             total_forecasts_dict["win"] += 1
-        if res == -1:
+            list_win.append(symbol)
+
+        elif res == -1:
             total_forecasts_dict["los"] += 1
-    total_sum = total_forecasts_dict["win"] + total_forecasts_dict["los"]
-    print(f"Forecasts count: {len(DATA_DF_OPEN_PRICE)}\n"
-          f"Correctness of forecasts: {total_forecasts_dict}\n"
-          f"Total sum: {total_sum}")
+            list_los.append(symbol)
+        else:
+            list_no_res.append(symbol)
+        DATA_DF.loc[index - 1, "CONFIRMATION"] = res
+        count += 1
+
+    DATA_DF.to_csv(FILE_DATA_PATH_WITH_SOME_CONFIRMATION, index=False)
+
+    set_win, set_los, set_no_res = set(list_win), set(list_los), set(list_no_res)
+
+    total_sum = total_forecasts_dict["win"] - total_forecasts_dict["los"]
+    percent_profit = 0.05 * total_forecasts_dict["win"] - 0.03 * total_forecasts_dict["los"]
+    percent_success_deals = (total_forecasts_dict["win"] /
+                             (total_forecasts_dict["win"] + total_forecasts_dict["los"])) * 100
+    percent_success_deals_set = (len(set_win) / (len(set_win) + len(set_los))) * 100
+    percent_profit_to_set = 0.05 * len(set_win) - 0.03 * len(set_los)
+
+    sum_of_one_deal = 10
+
+    print(f"\n"
+          f"Forecasts count: {len(DATA_DF)} (cur on count {count})\n"
+          f"Correctness of forecasts: {total_forecasts_dict}, (set: 'win': {len(set_win)}, 'los' {len(set_los)})\n"
+          f"Percent of success deals: {int(percent_success_deals)}%, (set: {int(percent_success_deals_set)}%)\n"
+          f"Total sum: {total_sum}\n\n"
+          f"Percent profit: {percent_profit}%. "
+          f"If sum to one deal = ${sum_of_one_deal}, profit: ${sum_of_one_deal*percent_profit}\n"
+          f"Percent profit to set: {percent_profit_to_set}%. "
+          f"If sum to one deal = ${sum_of_one_deal}, profit to set: ${sum_of_one_deal*percent_profit_to_set}\n\n"
+          f"list with win symbols: {list_win[:get_count_to_print(len(list_win)):]} (len: {len(list_win)})\n"
+          f"len SET with win symbols: {len(set_win)}\n"
+          f"list with los symbols: {list_los[:get_count_to_print(len(list_los)):]} (len: {len(list_los)})\n"
+          f"len SET with los symbols: {len(set_los)}\n"
+          f"list with symbols without result: {list_no_res[:get_count_to_print(len(list_no_res)):]} "
+          f"len: ({len(list_no_res)})\n"
+          f"len SET without result symbols: {len(set_no_res)}"
+          )
+
 
 check_data_forecasts()
 
