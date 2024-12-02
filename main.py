@@ -11,8 +11,7 @@ def main():
 
     parser = argparse.ArgumentParser()
 
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('-int', '--interval',
+    parser.add_argument('-int', '--interval',
                        type=str,
                        help='Interval that will using to make currency forecasts\n\n'
                             ''
@@ -21,7 +20,24 @@ def main():
                             ' fm (fifteen minutes)\n'
                             ' ah (a hour)\n'
                             ' fh (four hours)\n'
-                            ' ad (a day)')
+                            ' ad (a day)'
+                       )
+    parser.add_argument('-utf', '--use_two_forecasts',
+                       type=str,
+                       help='Flag to use the same minute and hour forecasts\n\n'
+                            ''
+                            'Allowed flags:\n'
+                            ' True\n'
+                            ' False'
+                       )
+    parser.add_argument('-uol', '--only_long',
+                       type=str,
+                       help='Flag to use only long forecasts\n\n'
+                            ''
+                            'Allowed flags:\n'
+                            ' True\n'
+                            ' False'
+                       )
 
     args = parser.parse_args()
 
@@ -52,9 +68,22 @@ def main():
             TIME_SECONDS = 3600 * 24
             INTERVAL_CLEAR_TIMER = timedelta(hours=6)
 
+    match args.use_two_forecasts:
+        case 'y':
+            USE_TWO_FORECASTS = True
+        case 'n':
+            USE_TWO_FORECASTS = False
+
+    match args.only_long:
+        case 'y':
+            ONLY_LONG = True
+        case 'n':
+            ONLY_LONG = False
+
     symbol_list = get_list_symbols(FILE_SYMBOLS_PATH)
     print(f"symbol_list len: {len(symbol_list)}")
-    data_collection(symbol_list, INTERVAL, INTERVAL_TYPE, FILE_DATA_PATH, TIME_SECONDS, INTERVAL_CLEAR_TIMER)
+    data_collection(symbol_list, INTERVAL, INTERVAL_TYPE, FILE_DATA_PATH, TIME_SECONDS,
+                    INTERVAL_CLEAR_TIMER, ONLY_LONG, USE_TWO_FORECASTS)
 
 
 if __name__ == '__main__':

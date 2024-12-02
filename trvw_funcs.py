@@ -1,13 +1,13 @@
 import csv
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 import logging
 import time
 from typing import Tuple
-
 import requests
 
 from tradingview_ta import TA_Handler, Interval
+from pybit.unified_trading import HTTP
 
 from config import FILE_DATA_PATH, FILE_SYMBOLS_PATH, API_URL_BYBIT
 
@@ -38,6 +38,25 @@ def get_symbol_forecast(symbol: str, interval: Interval) -> dict:
     activiti = output.get_analysis().summary
     # activiti['SYMBOL'] = symbol
     return activiti
+
+
+def get_symbol_joint_forecast(symbol: str) -> dict:
+    output_m = TA_Handler(
+        symbol=symbol,
+        screener='Crypto',
+        exchange='Binance',
+        interval=Interval.INTERVAL_1_MINUTE
+    )
+    output_h = TA_Handler(
+        symbol=symbol,
+        screener='Crypto',
+        exchange='Binance',
+        interval=Interval.INTERVAL_1_HOUR
+    )
+    if output_h.get_analysis().summary["RECOMMENDATION"] == output_m.get_analysis().summary["RECOMMENDATION"]:
+        return output_h.get_analysis().summary
+    return {'RECOMMENDATION': 'NEUTRAL', 'BUY': 0, 'SELL': 0, 'NEUTRAL': 0}
+
 
 
 def get_list_symbols(file_path: str) -> list:
@@ -143,7 +162,9 @@ def data_collection(symbols_list: list,
                     interval_type: str,
                     file_data_store: str,
                     time_seconds: int,
-                    interval_clear_timer: timedelta) -> None:
+                    interval_clear_timer: timedelta,
+                    only_long: bool,
+                    use_two_forecasts: bool,) -> None:
     """
     функция собирает прогнозы по всем монетам в выбранном интервале,
      собирает данные в определенном формате (см список 'fields_names')
@@ -154,6 +175,8 @@ def data_collection(symbols_list: list,
     :param file_data_store:
     :param time_seconds:
     :param interval_clear_timer:
+    :param only_long:
+    :param use_two_forecasts:
     :return:
     """
     fields_names = ['MODE', 'INTERVAL', 'SYMBOL', 'FORECAST', 'TIME-OPEN', 'PRICE-OPEN', 'PLATFORM_NAME', 'CONFIRMATION', ]
@@ -177,7 +200,10 @@ def data_collection(symbols_list: list,
         for symbol in symbols_list:
             time_now = datetime.now().replace(second=0, microsecond=0) # время по дубай
             try:
-                forecast = get_symbol_forecast(symbol, interval)
+                if use_two_forecasts:
+                    forecast = get_symbol_joint_forecast(symbol)
+                else:
+                    forecast = get_symbol_forecast(symbol, interval)
                 forecast_string = ';'.join([f"{value}" for key, value in forecast.items()])
                 fields_symbol_data = ['', interval_type, symbol, forecast_string, time_now, None, None, None]
                 if symbol in longs or symbol in shorts:
@@ -186,30 +212,54 @@ def data_collection(symbols_list: list,
                     #         # todo удаление из лонгов/шортов происходит только если сделка завершена
                     #         #  + результат сделки нужно сохранять; сделать проверку в цикле (интервально во времени)
                     # else:
-                        continue
+                    continue
+                session = HTTP()
 
                 if int(forecast['NEUTRAL']) <= 10:
+                    try:
+                        session_result = session.get_instruments_info(
+                            category="spot",
+                            symbol=symbol,
+                        )
+                        lotSizeFilter = session_result['result']['list'][0]['lotSizeFilter']
+                        minOrderQty = float(lotSizeFilter['minOrderQty'])
+                        minOrderAmt = float(lotSizeFilter['minOrderAmt'])
+
+                    except IndexError as e:
+                        # print(f"{symbol} is symbol from BINANCE ({e})")
+                        minOrderQty, minOrderAmt = 0, 0
+
                     match forecast['RECOMMENDATION']:
                         case 'STRONG_BUY':
                             platform_name, price = get_open_price(symbol, time_now)
+                            if platform_name == "BINANCE":
+                                continue
+                            min_order_cost = minOrderQty * float(price)
                             fields_symbol_data[0] = 'long'
                             fields_symbol_data[5] = price
+
                             fields_symbol_data[6] = platform_name
                             write_data_to_csv_file(file_data_store, fields_symbol_data)
-                            print(fields_symbol_data, 'записано')
+                            print(f"{fields_symbol_data}, записано; min cost:, ${min_order_cost}, (${minOrderAmt})")
                             longs.add(symbol)
-                            print(f"FORECAST FOR {symbol}: {forecast}")
+                            # print(f"FORECAST FOR {symbol}: {forecast}")
                             # forecasts_dict[symbol] = forecast
 
                         case 'STRONG_SELL':
+                            if only_long:
+                                print(f"FORECAST FOR {symbol}: {forecast} - не записано")
+                                continue
                             platform_name, price = get_open_price(symbol, time_now)
+                            if platform_name == "BINANCE":
+                                continue
+                            min_order_cost = minOrderQty * float(price)
                             fields_symbol_data[0] = 'short'
                             fields_symbol_data[5] = price
                             fields_symbol_data[6] = platform_name
                             write_data_to_csv_file(file_data_store, fields_symbol_data)
-                            print(fields_symbol_data, 'записано')
+                            print(f"{fields_symbol_data}, записано; min cost:, ${min_order_cost}, (${minOrderAmt})")
                             shorts.add(symbol)
-                            print(f"FORECAST FOR {symbol}: {forecast}")
+                            # print(f"FORECAST FOR {symbol}: {forecast} ЗАПИСАНО")
                             # forecasts_dict[symbol] = forecast
 
                 time.sleep(0.01)
