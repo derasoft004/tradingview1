@@ -1,5 +1,6 @@
 import argparse
 from datetime import timedelta
+import threading
 
 from tradingview_ta import Interval
 

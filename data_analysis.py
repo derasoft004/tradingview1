@@ -4,10 +4,10 @@ import pandas as pd
 from datetime import datetime, timedelta
 import requests
 from config import (API_URL_BYBIT, FILE_DATA_PATH_WITH_SOME_CONFIRMATION,
-                    FILE_DATA_PATH_WITH_SOME_CONFIRMATION_TP2_LS10,
-                    FILE_DATA_PATH_WITH_SOME_CONFIRMATION_TP5_LS_AFTER24H_3, WAIT_HOURS, RANGE_TO_GET_ROWS)
+                    FILE_DATA_PATH_WITH_SOME_CONFIRMATION_TP5_LS_AFTER24H_3, WAIT_HOURS, RANGE_TO_GET_ROWS, TP, LS,
+                    FILE_DATA_PATH_WITH_SOME_CONFIRMATION_TP10_LS2)
 
-DATA_DF = pd.read_csv(FILE_DATA_PATH_WITH_SOME_CONFIRMATION_TP5_LS_AFTER24H_3, index_col=0)
+DATA_DF = pd.read_csv(FILE_DATA_PATH_WITH_SOME_CONFIRMATION_TP10_LS2, index_col=0)
 
 
 def get_res_for_kline_binance(symbol: str,
@@ -57,7 +57,7 @@ def get_res_for_kline_binance(symbol: str,
     new_end = new_start + timedelta(hours=8)
     new_end_timestamp = int(new_end.timestamp() * 1000)
 
-    check_minimum = False
+    check_minimum = True
 
     current_dict = {}
     while different_times_hours_and_minutes > 8:
@@ -67,9 +67,9 @@ def get_res_for_kline_binance(symbol: str,
 
         current_different_hours = int((start_time - new_start).total_seconds() / 3600)
 
-        if wait_hours:
-            if current_different_hours >= 24:
-                check_minimum = True
+        # if wait_hours:
+        #     if current_different_hours >= 24:
+        #         check_minimum = True
         result = check_changing_in_prices_dictionary_interval(mode, symbol, open_price,
                                                               new_start, current_dict, check_minimum)
         if result in [1, -1]:
@@ -87,6 +87,9 @@ def get_res_for_kline_binance(symbol: str,
 
         result = check_changing_in_prices_dictionary_interval(mode, symbol, open_price,
                                                               new_start, current_dict, check_minimum)
+
+        if result in [1, -1]:
+            return result
 
     return 0
 
@@ -140,19 +143,20 @@ def get_res_for_kline_bybit(symbol: str,
     new_end = new_start + timedelta(hours=3)
     new_end_timestamp = int(new_end.timestamp() * 1000)
 
-    check_minimum = False
+    check_minimum = True
 
-    current_dict = {}
     while different_times_hours_and_minutes > 3:
+        current_dict = {}
+
         different_times_hours_and_minutes -= 3
 
         current_dict = get_prices(new_start_timestamp, new_end_timestamp, current_dict)
 
-        current_different_hours = int((start - new_start).total_seconds() / 3600)
+        current_different_hours = int((new_start - start).total_seconds() / 3600)
 
-        if wait_hours:
-            if current_different_hours >= 24:
-                check_minimum = True
+        # if wait_hours:
+        #     if current_different_hours >= 24:
+        #         check_minimum = True
         result = check_changing_in_prices_dictionary_interval(mode, symbol, open_price,
                                                               new_start, current_dict, check_minimum)
         if result in [1, -1]:
@@ -173,7 +177,6 @@ def get_res_for_kline_bybit(symbol: str,
 
         if result in [1, -1]:
             return result
-
 
     return 0
 
@@ -201,15 +204,19 @@ def check_changing_in_prices_dictionary_interval(mode: str,
                                                  ) -> int:
     one_percent = open_price / 100
     if mode == 'long':
-        long_price_prof = open_price + one_percent * 5
-        close_price = open_price - one_percent * 3
+        long_price_prof = open_price + one_percent * TP
+        close_price = open_price - one_percent * LS
         # print(f"open_time: {open_time}\nopen_price: {open_price}\n1%: "
         #       f"{one_percent}\nlong_price_prof: {long_price_prof}") # \nclose_price: {close_price}
         for time_, prices in prices_dictionary.items():
             max_price_minute = prices['high_price']
             min_price_minute = prices['low_price']
             if max_price_minute >= long_price_prof:  # в интервале лонг прогнозирован правильно
-                print('TIME-WIN:', time_, max_price_minute)
+                print(f'PRICE-OPEN: {open_price}\n'
+                      f'min_price_minute: {min_price_minute}\n'
+                      f'max_price_minute: {max_price_minute}\n'
+                      f'PRICE-WIN: {long_price_prof}\n'
+                      f'TIME-WIN:{time_}, {max_price_minute}')
                 # print(f"open_time: {open_time}\nopen_price: {open_price}\n1%: "
                 #       f"{one_percent}\nlong_price_prof: {long_price_prof}")
                 return 1
@@ -218,8 +225,8 @@ def check_changing_in_prices_dictionary_interval(mode: str,
                 return -1
 
     elif mode == 'short':
-        short_price_prof = open_price - one_percent * 5
-        close_price = open_price + one_percent * 3
+        short_price_prof = open_price - one_percent * TP
+        close_price = open_price + one_percent * LS
         # print(f"open_time: {open_time}\nopen_price: {open_price}\n1%: "
         #       f"{one_percent}\nshort_price_prof: {short_price_prof}") # \nclose_price: {close_price}
 
@@ -252,8 +259,10 @@ def get_data_in_range(start: int, end: int) -> dict:
     for row in df.itertuples(index=False):
         count += 1
         mode = row.MODE
+        symbol = row.SYMBOL
         confirmation = row.CONFIRMATION
-        if count - 1 < start or count - 1 > end or mode == "MODE" or confirmation in ["1", "-1"]: #
+        if (count - 1 < start or count - 1 > end or mode == "MODE" or confirmation in ["1", "-1"] or symbol in
+                ["USDCUSDT", "BTCUSDC", "ETHUSDC", "ETHBTC"]): #
             continue
         ret_dict[count] = row
     return ret_dict
@@ -265,9 +274,10 @@ def check_data_forecasts():
 from config import FILE_DATA_PATH,FILE_DATA_PATH_WITH_SOME_CONFIRMATION
 import pandas as pd
 
-OLD_DF = pd.read_csv(FILE_DATA_PATH, index_col=False)
+OLD_DF_1 = pd.read_csv(FILE_DATA_PATH, index_col=False)[:1391]
+OLD_DF_2 = pd.read_csv(FILE_DATA_PATH, index_col=False)[1391:]
 DATA_DF = pd.read_csv(FILE_DATA_PATH_WITH_SOME_CONFIRMATION, index_col=0)
-df_tmp = pd.concat([DATA_DF, OLD_DF[1391:]], ignore_index=True)
+df_tmp = pd.concat([OLD_DF_1, OLD_DF_2], ignore_index=True)
 
     (del df_tmp['Unnamed: 0'])
 
@@ -312,12 +322,12 @@ df_tmp = pd.concat([DATA_DF, OLD_DF[1391:]], ignore_index=True)
         DATA_DF.loc[index - 1, "CONFIRMATION"] = res
         count += 1
 
-    DATA_DF.to_csv(FILE_DATA_PATH_WITH_SOME_CONFIRMATION)
+    DATA_DF.to_csv(FILE_DATA_PATH_WITH_SOME_CONFIRMATION_TP10_LS2)
 
-    set_win, set_los, set_no_res = set(list_win), set(list_los), set(list_no_res)
+    # set_win, set_los, set_no_res = set(list_win), set(list_los), set(list_no_res)
 
     total_sum = total_forecasts_dict["win"] - total_forecasts_dict["los"]
-    percent_profit = 0.02 * total_forecasts_dict["win"] - 0.1 * total_forecasts_dict["los"] # 0.03 * total_forecasts_dict["los"]
+    percent_profit = (TP / 100) * total_forecasts_dict["win"] - (LS / 100) * total_forecasts_dict["los"]
     try:
         percent_success_deals = (total_forecasts_dict["win"] /
                                  (total_forecasts_dict["win"] + total_forecasts_dict["los"] + len(list_no_res))) * 100
@@ -329,7 +339,7 @@ df_tmp = pd.concat([DATA_DF, OLD_DF[1391:]], ignore_index=True)
     #     percent_success_deals_set = 0
     # percent_profit_to_set = 0.02 * len(set_win) - 0.03 * len(set_los)
 
-    sum_of_one_deal = 5
+    sum_of_one_deal = 10
 
     print(f"\n"
           f"Forecasts count: {len(DATA_DF)} (cur on count {count})\n"
@@ -337,9 +347,9 @@ df_tmp = pd.concat([DATA_DF, OLD_DF[1391:]], ignore_index=True)
           f"Percent of success deals: {int(percent_success_deals)}%\n" # , (set: {int(percent_success_deals_set)}%)
           f"Total sum: {total_sum}\n\n"
           f"Percent profit: {percent_profit}%. "
-          f"If sum to one deal = ${sum_of_one_deal}, profit: ${sum_of_one_deal * percent_profit}\n"
+          f"If sum to one deal = ${sum_of_one_deal}, profit: ${count * percent_profit / 100}\n"
           # f"Percent profit to set: {percent_profit_to_set}%. "
-          f"If sum to one deal = ${sum_of_one_deal}\n\n" # , profit to set: ${sum_of_one_deal*percent_profit_to_set}
+          # f"If sum to one deal = ${sum_of_one_deal}, profit to set: ${sum_of_one_deal*percent_profit_to_set}\n\n"  
           f"list with win symbols: {list_win[:get_count_to_print(len(list_win)):]} (len: {len(list_win)})\n"
           # f"len SET with win symbols: {len(set_win)}\n"
           f"list with los symbols: {list_los[:get_count_to_print(len(list_los)):]} (len: {len(list_los)})\n"

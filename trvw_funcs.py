@@ -5,11 +5,35 @@ import logging
 import time
 from typing import Tuple
 import requests
+import telebot
+import time
 
 from tradingview_ta import TA_Handler, Interval
 from pybit.unified_trading import HTTP
 
-from config import FILE_DATA_PATH, FILE_SYMBOLS_PATH, API_URL_BYBIT
+from bot_handler import send_message, get_last_message
+from config import (FILE_DATA_PATH, FILE_SYMBOLS_PATH, API_URL_BYBIT, ONE_DEAL_BET,
+                    API_KEY_BYBIT, API_SECRET_BYBIT, TELEGRAM_TOKEN, CHAT_ID, TRVW_LINK_SYMBOL)
+
+
+# bot = telebot.TeleBot(TELEGRAM_TOKEN)
+#
+#
+# def wait_for_response_(chat_id):
+#     @bot.message_handler(func=lambda message: True)
+#     def handle_response(message):
+#         if message.chat.id == chat_id:
+#             print(message.text)
+#             time.sleep(3)
+#             if message.text:
+#                 bot.reply_to(message, "Спасибо за ваш ответ!")
+#             else:
+#                 handle_response(message)
+#             print('ответ обработан')
+#
+#
+# def run_bot():
+#     bot.polling(none_stop=True)
 
 
 def get_symbol_forecast(symbol: str, interval: Interval) -> dict:
@@ -58,7 +82,6 @@ def get_symbol_joint_forecast(symbol: str) -> dict:
     return {'RECOMMENDATION': 'NEUTRAL', 'BUY': 0, 'SELL': 0, 'NEUTRAL': 0}
 
 
-
 def get_list_symbols(file_path: str) -> list:
     """
     функиця достает список из 374 монет и возвращает их список
@@ -87,14 +110,14 @@ def write_data_to_csv_file(file_path: str, fields_data_list: list) -> None:
     try:
         if not os.path.exists(file_path):
             with open(file_path, 'w') as csv_file:
-                    writer_head = csv.DictWriter(csv_file, fieldnames=fields_data_list)
-                    writer_head.writeheader()
-                    logging.info(f'file {file_path} is created.\n')
+                writer_head = csv.DictWriter(csv_file, fieldnames=fields_data_list)
+                writer_head.writeheader()
+                logging.info(f'file {file_path} is created.\n')
         else:
             with open(file_path, 'a') as csv_file:
-                    writer = csv.writer(csv_file)
-                    writer.writerow(fields_data_list)
-                    logging.info(f'\'fields_data_list\' was writen to file {file_path} successfully.\n')
+                writer = csv.writer(csv_file)
+                writer.writerow(fields_data_list)
+                logging.info(f'\'fields_data_list\' was writen to file {file_path} successfully.\n')
     except FileNotFoundError as not_found_error:
         print(not_found_error)
         return
@@ -142,6 +165,25 @@ def get_kline_binance_open_price(symbol: str, interval: str, open_time: datetime
     return open_price
 
 
+def get_base_precision_count_nums(base_precision: str) -> int:
+    return len(base_precision.split('.')[1])
+
+
+def round_down(value: float, decimal_places):
+    value_str = str(value)
+    integer_part, decimal_part = value_str.split('.')
+
+    if decimal_places == 0:
+        return float(integer_part)  # Возвращаем только целую часть
+
+    if len(decimal_part) > decimal_places:
+        rounded_decimal = decimal_part[:decimal_places]
+        return float(f"{integer_part}.{rounded_decimal}")
+    else:
+        rounded_decimal = decimal_part.ljust(decimal_places, '0')
+        return float(f"{integer_part}.{rounded_decimal}")
+
+
 def get_open_price(symbol: str, target_time) -> Tuple:
     interval = "1"
     category = "spot"
@@ -164,7 +206,7 @@ def data_collection(symbols_list: list,
                     time_seconds: int,
                     interval_clear_timer: timedelta,
                     only_long: bool,
-                    use_two_forecasts: bool,) -> None:
+                    use_two_forecasts: bool, ) -> None:
     """
     функция собирает прогнозы по всем монетам в выбранном интервале,
      собирает данные в определенном формате (см список 'fields_names')
@@ -179,7 +221,8 @@ def data_collection(symbols_list: list,
     :param use_two_forecasts:
     :return:
     """
-    fields_names = ['MODE', 'INTERVAL', 'SYMBOL', 'FORECAST', 'TIME-OPEN', 'PRICE-OPEN', 'PLATFORM_NAME', 'CONFIRMATION', ]
+    fields_names = ['MODE', 'INTERVAL', 'SYMBOL', 'FORECAST', 'TIME-OPEN', 'PRICE-OPEN', 'PLATFORM_NAME',
+                    'CONFIRMATION', ]
 
     write_data_to_csv_file(FILE_DATA_PATH, fields_names)
 
@@ -187,9 +230,22 @@ def data_collection(symbols_list: list,
 
     # forecasts_dict = {symbol_name: {} for symbol_name in symbols_list}
     round_number = 0
-    time_start = datetime.now().replace(second=0, microsecond=0) # время по дубай
+    time_start = datetime.now().replace(second=0, microsecond=0)  # время по дубай
     next_time = time_start + interval_clear_timer
     print(f"now time is: {time_start} next time is: {next_time.strftime('%Y-%m-%d %H:%M:%S')}")
+
+    client = HTTP(
+        api_key=API_KEY_BYBIT,
+        api_secret=API_SECRET_BYBIT
+    )
+
+    # на тестах
+    availableWithdrawal = client.get_wallet_balance(
+        accountType='UNIFIED',
+        coin='USDT'
+    )
+    totalMarginBalance = float(availableWithdrawal["result"]["list"][0]["totalMarginBalance"])
+
     while True:
         print(f"==========NEW={round_number}=ROUND==========\n"
               f"longs: {longs}\n"
@@ -198,34 +254,36 @@ def data_collection(symbols_list: list,
         symbols_list_except = []
 
         for symbol in symbols_list:
-            time_now = datetime.now().replace(second=0, microsecond=0) # время по дубай
+            if symbol in ["BTCUSDT", "BTCUSDC", "ETHUSDT", "ETHUSDC"]:
+                continue
+            time_now = datetime.now().replace(second=0, microsecond=0)  # время по дубай
             try:
                 if use_two_forecasts:
                     forecast = get_symbol_joint_forecast(symbol)
                 else:
                     forecast = get_symbol_forecast(symbol, interval)
+                    # sent_message = send_message(symbol + forecast['RECOMMENDATION'])
+                    # print(f'отправлено сообщение по {symbol}')
+                    # new_message = get_last_message(sent_message)
+                    # print(new_message)
+
                 forecast_string = ';'.join([f"{value}" for key, value in forecast.items()])
                 fields_symbol_data = ['', interval_type, symbol, forecast_string, time_now, None, None, None]
                 if symbol in longs or symbol in shorts:
-                    # if forecast != forecasts_dict[symbol]:
-                    #     forecasts_dict[symbol] = forecast
-                    #         # todo удаление из лонгов/шортов происходит только если сделка завершена
-                    #         #  + результат сделки нужно сохранять; сделать проверку в цикле (интервально во времени)
-                    # else:
                     continue
-                session = HTTP()
 
                 if int(forecast['NEUTRAL']) <= 10:
                     try:
-                        session_result = session.get_instruments_info(
+                        session_result = client.get_instruments_info(
                             category="spot",
                             symbol=symbol,
-                        )
-                        lotSizeFilter = session_result['result']['list'][0]['lotSizeFilter']
+                        )['result']
+                        lotSizeFilter = session_result['list'][0]['lotSizeFilter']
+                        # print(session_result)
                         minOrderQty = float(lotSizeFilter['minOrderQty'])
                         minOrderAmt = float(lotSizeFilter['minOrderAmt'])
 
-                    except IndexError as e:
+                    except IndexError:
                         # print(f"{symbol} is symbol from BINANCE ({e})")
                         minOrderQty, minOrderAmt = 0, 0
 
@@ -237,17 +295,53 @@ def data_collection(symbols_list: list,
                             min_order_cost = minOrderQty * float(price)
                             fields_symbol_data[0] = 'long'
                             fields_symbol_data[5] = price
-
                             fields_symbol_data[6] = platform_name
                             write_data_to_csv_file(file_data_store, fields_symbol_data)
+
+                            # нужно когда каждый раз именно баланс берем (в реальной работе)
+                            # availableWithdrawal = client.get_wallet_balance(
+                            #     accountType='UNIFIED',
+                            #     coin='USDT'
+                            # )
+                            # totalMarginBalance = float(availableWithdrawal["result"]["list"][0]["totalMarginBalance"])
+
                             print(f"{fields_symbol_data}, записано; min cost:, ${min_order_cost}, (${minOrderAmt})")
+                            if min_order_cost < ONE_DEAL_BET and minOrderAmt < ONE_DEAL_BET:
+                                if totalMarginBalance > 1:
+                                    # precision_count_nums = get_base_precision_count_nums(lotSizeFilter["basePrecision"])
+                                    # correct_qty = round_down(minOrderQty * (1 + COMMISSION_RATE), precision_count_nums)
+                                    # correct_qty = int(minOrderQty) + 1
+                                    current_order_cost = minOrderQty * float(price)
+                                    # print(session_result)
+
+                                    result_about_symbol = \
+                                        (f'"{symbol}"\n'
+                                         f'{TRVW_LINK_SYMBOL}{symbol}\n'
+                                         f'можно купить {minOrderQty} этой монеты на ${current_order_cost} \n'
+                                         f'баланс маржи сейчас: ${totalMarginBalance}, ' 
+                                         f'баланс маржи после покупки: ${totalMarginBalance - current_order_cost}')
+
+                                    sent_message = send_message(result_about_symbol)
+                                    print(f'отправлено сообщение по {symbol} (маржа {totalMarginBalance})')
+                                    # print(result_about_symbol)
+                                    new_message = get_last_message(sent_message)
+                                    print(new_message)
+
+                                    if new_message == 'да':
+                                        totalMarginBalance -= current_order_cost
+                                        print('маржа да', totalMarginBalance)
+                                    elif new_message == 'нет':
+                                        print('маржа нет', totalMarginBalance)
+                                        continue
+
+                                elif totalMarginBalance <= 1:
+                                    print('баланс слишком мал!')
+
                             longs.add(symbol)
-                            # print(f"FORECAST FOR {symbol}: {forecast}")
-                            # forecasts_dict[symbol] = forecast
 
                         case 'STRONG_SELL':
                             if only_long:
-                                print(f"FORECAST FOR {symbol}: {forecast} - не записано")
+                                # print(f"FORECAST FOR {symbol}: {forecast} - не записано")
                                 continue
                             platform_name, price = get_open_price(symbol, time_now)
                             if platform_name == "BINANCE":
@@ -284,4 +378,3 @@ def data_collection(symbols_list: list,
             shorts.clear()
 
         # time.sleep(time_seconds)
-
